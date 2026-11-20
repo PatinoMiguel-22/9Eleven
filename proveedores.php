@@ -265,7 +265,7 @@ $proveedores = $stmt->fetchAll();
 
             <?php endif; ?>
 
-            <table>
+                    <table>
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -289,11 +289,11 @@ $proveedores = $stmt->fetchAll();
                                 <td><?= h($p['nombreCategoria'] ?? '—') ?></td>
                                 <td>
                                     <a href="proveedores.php?vista=editar&id=<?= (int)$p['ID_Proveedor'] ?>" style="color: #007bff; text-decoration: none; font-weight: bold;">Editar</a>
-                                    <form method="POST" action="proveedores.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este registro?');">
-                                    <?= csrfCampo() ?>
-                                    <input type="hidden" name="id_eliminar" value="<?= (int)$p['ID_Proveedor'] ?>">
-                                    <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
-                                </form>
+                                    <form method="POST" action="proveedores.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este proveedor?');">
+                                        <?= csrfCampo() ?>
+                                        <input type="hidden" name="id_eliminar" value="<?= (int)$p['ID_Proveedor'] ?>">
+                                        <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

@@ -69,3 +69,26 @@ function formatoPesos($valor): string
 {
     return '$' . number_format((float)$valor, 0, ',', '.');
 }
+
+// ----------------------------------------------------
+// Protección CSRF (token por sesión)
+// ----------------------------------------------------
+
+function csrfToken(): string
+{
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrfCampo(): string
+{
+    return '<input type="hidden" name="csrf_token" value="' . h(csrfToken()) . '">';
+}
+
+function csrfValido(): bool
+{
+    return isset($_POST['csrf_token'], $_SESSION['csrf_token'])
+        && hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token']);
+}

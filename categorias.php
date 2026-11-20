@@ -41,25 +41,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nueva']))
 // ACCIÓN: Eliminar categoría
 // ----------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
-    $nombreBuscar = trim($_POST['nombre_eliminar'] ?? '');
+    $idEliminar = (int)($_POST['id_eliminar'] ?? 0);
+    $nombreEliminar = '';
 
-    if ($nombreBuscar === '') {
-        $error = 'Escribe el nombre de la categoría a eliminar.';
-        $vista = 'eliminar';
+    if (!csrfValido()) {
+        $error = 'Token de seguridad inválido. Recarga la página e inténtalo de nuevo.';
+    } elseif ($idEliminar <= 0) {
+        $error = 'Categoría no válida.';
     } else {
-        $stmt = $pdo->prepare("DELETE FROM categorias WHERE nombreCategoria = ?");
-        $stmt->execute([$nombreBuscar]);
+        try {
+            $stmtNombre = $pdo->prepare("SELECT nombreCategoria FROM categorias WHERE ID_Categoria = ?");
+            $stmtNombre->execute([$idEliminar]);
+            $nombreEliminar = $stmtNombre->fetchColumn();
 
-        if ($stmt->rowCount() > 0) {
-            $exito = "Categoría \"$nombreBuscar\" eliminada correctamente.";
-            $vista = 'lista';
-        } else {
-            $error = "No se encontró una categoría llamada \"$nombreBuscar\".";
-            $vista = 'eliminar';
+            $stmtProd = $pdo->prepare("SELECT COUNT(*) FROM productos WHERE ID_Categoria = ?");
+            $stmtProd->execute([$idEliminar]);
+            $totalProd = (int)$stmtProd->fetchColumn();
+
+            $stmtProv = $pdo->prepare("SELECT COUNT(*) FROM proveedores WHERE ID_Categoria = ?");
+            $stmtProv->execute([$idEliminar]);
+            $totalProv = (int)$stmtProv->fetchColumn();
+
+            if ($nombreEliminar === false) {
+                $error = 'No se encontró la categoría.';
+            } elseif ($totalProd > 0 || $totalProv > 0) {
+                $error = "No se puede eliminar \"$nombreEliminar\": tiene $totalProd producto(s) y $totalProv proveedor(es) asociados.";
+            } else {
+                $stmt = $pdo->prepare("DELETE FROM categorias WHERE ID_Categoria = ?");
+                $stmt->execute([$idEliminar]);
+                $exito = "Categoría \"$nombreEliminar\" eliminada correctamente.";
+            }
+        } catch (PDOException $e) {
+            $error = ($e->getCode() === '23000')
+                ? "No se puede eliminar \"$nombreEliminar\": la categoría tiene registros asociados."
+                : 'Error al eliminar la categoría.';
         }
     }
+    $vista = 'lista';
 }
-
 // ----------------------------------------------------
 // ACCIÓN: Editar categoría
 // ----------------------------------------------------
@@ -161,7 +180,6 @@ $categorias = $stmt->fetchAll();
                 <h2>Lista de Categorías</h2>
                 <div class="barra-acciones" style="margin-bottom:0;">
                     <a href="categorias.php?vista=consultar" class="btn btn-rojo">Buscar categoria</a>
-                    <a href="categorias.php?vista=eliminar" class="btn btn-rojo">Eliminar categoria</a>
                     <a href="categorias.php?vista=nueva" class="btn btn-rojo">+ Nueva categoria</a>
                 </div>
             </div>
@@ -228,8 +246,8 @@ $categorias = $stmt->fetchAll();
                     </form>
                 </div>
             <?php endif; ?>
-
-           <thead>
+            <table>
+                <thead>
                     <tr>
                         <th>ID</th>
                         <th>Nombre</th>
@@ -248,6 +266,11 @@ $categorias = $stmt->fetchAll();
                                 <td><?= (int)$c['totalProductos'] ?></td>
                                 <td>
                                     <a href="categorias.php?vista=editar&id=<?= $c['ID_Categoria'] ?>" class="btn" style="padding: 4px 8px; font-size: 13px;">Editar</a>
+                                    <form method="POST" action="categorias.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar esta categoría?');">
+                                        <?= csrfCampo() ?>
+                                        <input type="hidden" name="id_eliminar" value="<?= (int)$c['ID_Categoria'] ?>">
+                                        <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

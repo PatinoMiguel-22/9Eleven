@@ -5,10 +5,16 @@ requerirLogin();
 $paginaActual = 'alertaStock.php';
 
 $productos = $pdo->query(
-    "SELECT nombreProducto, stockActual, stockMinimo
-     FROM productos
-     WHERE stockActual <= stockMinimo
-     ORDER BY (stockMinimo - stockActual) DESC"
+    "SELECT p.nombreProducto, p.stockActual, stockMinimo,
+            COALESCE(c.nombreCategoria, 'Sin asignar') AS categoria,
+            COALESCE(GROUP_CONCAT(pr.nombreEmpresa SEPARATOR ', '), 'Sin asignar) AS proveedor
+    FROM productos p
+    LEFT JOIN categorias c ON c.ID_Categoria = p.ID_Categoria      
+    LEFT JOIN proveedores pr ON pr.ID_Categoria = c.ID_Categoria
+    WHERE p.stockActual <= p.stockMinimo
+    GROUP BY p.ID_Producto, p.nombreProducto, p.stockActual, p.stockMinimo, c.nombreCategoria   
+    ORDER BY (p.stockMinimo - p.stockActual) DESC"
+
 )->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -43,6 +49,7 @@ $productos = $pdo->query(
                         <div class="info">
                             <b><?= h($p['nombreProducto']) ?></b>
                             <span>Stock actual: <?= (int)$p['stockActual'] ?> und — Mínimo: <?= (int)$p['stockMinimo'] ?> und</span>
+                            <span>categoria: <?= h($p['Categoria']) ?> - proveedor: <?= h($p[Proveedor]) ?></spam>
                         </div>
                         <span class="alerta-tag"><?= $critico ? 'CRÍTICO' : 'BAJO' ?></span>
                     </div>

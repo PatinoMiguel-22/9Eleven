@@ -7,6 +7,7 @@ $items = [
     'productos.php'    => 'Productos',
     'categorias.php'   => 'Categorias',
     'proveedores.php'  => 'Proveedores',
+    'entradas.php'     => 'Entradas',
     'ventas.php'       => 'Ventas',
     'reportes.php'     => 'Reportes',
     'alertaStock.php'  => 'Alertas stock',

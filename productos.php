@@ -15,7 +15,8 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nombreCategoria")->
 // ----------------------------------------------------
 // ACCIÓN: Agregar producto
 // ----------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nuevo'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nuevo'])) 
+{
     $codigo       = trim($_POST['codigo'] ?? '');
     $nombre       = trim($_POST['nombre'] ?? '');
     $idCategoria  = $_POST['categoria'] ?: null;
@@ -25,11 +26,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nuevo'])) {
     $stockActual  = (int)($_POST['stock_actual'] ?? 0);
     $stockMinimo  = (int)($_POST['stock_minimo'] ?? 0);
 
-    if ($codigo === '' || $nombre === '') {
+  if ($codigo === '' || $nombre === '') 
+    {
         $error = 'Código y nombre del producto son obligatorios.';
         $vista = 'nuevo';
-    } else {
-        try {
+    } elseif ($precioCompra < 0 || $precioVenta < 0 || $stockActual < 0 || $stockMinimo < 0) 
+    {
+        $error = 'Los precios y el stock no pueden ser negativos.';
+        $vista = 'nuevo';
+    } else 
+    {
+        try 
+        {
             $stmt = $pdo->prepare(
                 "INSERT INTO productos
                  (codigoProducto, nombreProducto, precioCompra, precioVenta, iva, stockActual, stockMinimo, ID_Categoria)
@@ -38,7 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nuevo'])) {
             $stmt->execute([$codigo, $nombre, $precioCompra, $precioVenta, $iva, $stockActual, $stockMinimo, $idCategoria]);
             $exito = "Producto \"$nombre\" agregado correctamente.";
             $vista = 'lista';
-        } catch (PDOException $e) {
+        } catch (PDOException $e) 
+        {
             $error = ($e->getCode() === '23000')
                 ? 'Ya existe un producto con ese código.'
                 : 'Error al guardar el producto.';
@@ -47,27 +56,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nuevo'])) {
     }
 }
 
+//-----------------------------------------------------
+//ACCION: Editar producto
+//-----------------------------------------------------
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar'])) 
+{
+    $codigoOriginal = $_POST['codigo_original'] ?? '';
+    $codigo       = trim($_POST['codigo'] ?? '');
+    $nombre       = trim($_POST['nombre'] ?? '');
+    $idCategoria  = $_POST['categoria'] ?: null;
+    $precioCompra = (float)($_POST['precio_compra'] ?? 0);
+    $precioVenta  = (float)($_POST['precio_venta'] ?? 0);
+    $iva          = (float)($_POST['iva'] ?? 0);
+    $stockActual  = (int)($_POST['stock_actual'] ?? 0);
+    $stockMinimo  = (int)($_POST['stock_minimo'] ?? 0);
+
+    if ($codigo === '' || $nombre === '') 
+    {
+        $error = 'Código y nombre del producto son obligatorios.';
+        $vista = 'editar';
+        $_GET['codigo'] = $codigoOriginal;
+    } elseif ($precioCompra < 0 || $precioVenta < 0 || $stockActual < 0 || $stockMinimo < 0) 
+    {
+        $error = 'Los precios y el stock no pueden ser negativos.';
+        $vista = 'editar';
+        $_GET['codigo'] = $codigoOriginal;
+    } else 
+    {
+        try 
+        {
+            $stmt = $pdo->prepare(
+                "UPDATE productos SET 
+                 codigoProducto = ?, nombreProducto = ?, precioCompra = ?, precioVenta = ?, iva = ?, stockActual = ?, stockMinimo = ?, ID_Categoria = ?
+                 WHERE codigoProducto = ?"
+            );
+            $stmt->execute([$codigo, $nombre, $precioCompra, $precioVenta, $iva, $stockActual, $stockMinimo, $idCategoria, $codigoOriginal]);
+            $exito = "Producto \"$nombre\" actualizado correctamente.";
+            $vista = 'lista';
+        } catch (PDOException $e) 
+        {
+            $error = ($e->getCode() === '23000')
+                ? 'Ya existe otro producto con ese código.'
+                : 'Error al actualizar el producto.';
+            $vista = 'editar';
+            $_GET['codigo'] = $codigoOriginal;
+        }
+    }
+}
+
 // ----------------------------------------------------
 // ACCIÓN: Eliminar producto
 // ----------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
-    $nombreBuscar = trim($_POST['nombre_eliminar'] ?? '');
+    $idEliminar = (int)($_POST['id_eliminar'] ?? 0);
+    $nombreEliminar = '';
 
-    if ($nombreBuscar === '') {
-        $error = 'Escribe el nombre del producto a eliminar.';
-        $vista = 'eliminar';
+    if (!csrfValido()) {
+        $error = 'Token de seguridad inválido. Recarga la página e inténtalo de nuevo.';
+    } elseif ($idEliminar <= 0) {
+        $error = 'Producto no válido.';
     } else {
-        $stmt = $pdo->prepare("DELETE FROM productos WHERE nombreProducto = ?");
-        $stmt->execute([$nombreBuscar]);
+        try {
+            $stmtNombre = $pdo->prepare("SELECT nombreProducto FROM productos WHERE ID_Producto = ?");
+            $stmtNombre->execute([$idEliminar]);
+            $nombreEliminar = $stmtNombre->fetchColumn();
 
-        if ($stmt->rowCount() > 0) {
-            $exito = "Producto \"$nombreBuscar\" eliminado correctamente.";
-            $vista = 'lista';
-        } else {
-            $error = "No se encontró un producto llamado \"$nombreBuscar\".";
-            $vista = 'eliminar';
+            if ($nombreEliminar === false) {
+                $error = 'No se encontró el producto.';
+            } else {
+                $stmt = $pdo->prepare("DELETE FROM productos WHERE ID_Producto = ?");
+                $stmt->execute([$idEliminar]);
+                $exito = "Producto \"$nombreEliminar\" eliminado correctamente.";
+            }
+        } catch (PDOException $e) {
+            $error = ($e->getCode() === '23000')
+                ? 'El producto tiene ventas registradas y no puede eliminarse.'
+                : 'Error al eliminar el producto.';
         }
     }
+    $vista = 'lista';
+}
+
+// ----------------------------------------------------
+// ACCIÓN: Activar / desactivar producto (borrado lógico)
+// ----------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_estado'])) {
+    $idEstado    = (int)($_POST['id_estado'] ?? 0);
+    $nuevoEstado = ((int)($_POST['nuevo_estado'] ?? 0) === 1) ? 1 : 0;
+
+    if (!csrfValido()) {
+        $error = 'Token de seguridad inválido. Recarga la página e inténtalo de nuevo.';
+    } elseif ($idEstado <= 0) {
+        $error = 'Producto no válido.';
+    } else {
+        try {
+            $stmt = $pdo->prepare("UPDATE productos SET activo = ? WHERE ID_Producto = ?");
+            $stmt->execute([$nuevoEstado, $idEstado]);
+
+            if ($stmt->rowCount() > 0) {
+                $exito = $nuevoEstado ? 'Producto activado correctamente.' : 'Producto desactivado correctamente.';
+            } else {
+                $error = 'No se encontró el producto o ya tenía ese estado.';
+            }
+        } catch (PDOException $e) {
+            $error = 'Error al cambiar el estado del producto.';
+        }
+    }
+    $vista = 'lista';
 }
 
 // ----------------------------------------------------
@@ -80,6 +176,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_consultar'])) 
     $filtroCategoria = trim($_POST['categoria_consultar'] ?? '');
     $vista = 'lista';
 }
+
+//-----------------------------------------------------
+//Cargar datos para edicion
+//-----------------------------------------------------
+
+$productoEditar = null;
+if ($vista === 'editar') 
+{
+    $codigoGet = $_GET['codigo'] ?? '';
+
+    if ($codigoGet !== '') 
+    {
+        $stmt = $pdo->prepare("SELECT * FROM productos WHERE codigoProducto = ?");
+        $stmt->execute([$codigoGet]);
+        $productoEditar = $stmt->fetch();
+        if (!$productoEditar) 
+        {
+            $error = 'Producto no encontrado.';
+            $vista = 'lista';
+        }
+    } else 
+    {
+        $error = 'Código de producto no válido.';
+        $vista = 'lista';
+    }
+}
+
 
 // ----------------------------------------------------
 // Listado de productos (aplica filtro si viene de "Consultar")
@@ -128,7 +251,6 @@ $productos = $stmt->fetchAll();
 
         <div class="barra-acciones">
             <a href="productos.php?vista=nuevo" class="btn">+ Nuevo Producto</a>
-            <a href="productos.php?vista=eliminar" class="btn btn-rojo">X Eliminar Producto</a>
             <a href="productos.php?vista=consultar" class="btn">= Consultar Producto</a>
         </div>
 
@@ -163,24 +285,79 @@ $productos = $stmt->fetchAll();
                     </div>
                     <div class="form-grupo">
                         <label for="precio_venta">Precio de venta</label>
-                        <input type="number" step="0.01" id="precio_venta" name="precio_venta" required>
+                        <input type="number" step="0.01" min="0" id="precio_venta" name="precio_venta" required>
                     </div>
                     <div class="form-grupo">
                         <label for="iva">IVA (%)</label>
-                        <input type="number" step="0.01" id="iva" name="iva" value="0">
+                        <input type="number" step="0.01" min="0" id="iva" name="iva" value="0">
                     </div>
                     <div class="form-grupo">
                         <label for="stock_actual">Stock actual</label>
-                        <input type="number" id="stock_actual" name="stock_actual" value="0" required>
+                        <input type="number" id="stock_actual" min="0" name="stock_actual" value="0" required>
                     </div>
                     <div class="form-grupo">
                         <label for="stock_minimo">Stock mínimo</label>
-                        <input type="number" id="stock_minimo" name="stock_minimo" value="0" required>
+                        <input type="number" min="0" id="stock_minimo" name="stock_minimo" value="0" required>
                     </div>
 
                     <div class="acciones-form">
                         <a href="productos.php" class="btn">Cancelar</a>
                         <button type="submit" name="accion_nuevo" class="btn btn-rojo">AGREGAR PRODUCTO</button>
+                    </div>
+                </form>
+            </div>
+
+            <?php elseif ($vista === 'editar' && $productoEditar): ?>
+            <div class="form-box">
+                <h2>Editar producto</h2>
+                <form method="POST" action="productos.php">
+                    <input type="hidden" name="codigo_original" value="<?= h($productoEditar['codigoProducto']) ?>">
+                    
+                    <div class="form-grupo">
+                        <label for="nombre">Nombre producto</label>
+                        <input type="text" id="nombre" name="nombre" value="<?= h($productoEditar['nombreProducto']) ?>" required>
+                    </div>
+                    <div class="form-grupo">
+                        <label for="codigo">Código</label>
+                        <input type="text" id="codigo" name="codigo" value="<?= h($productoEditar['codigoProducto']) ?>" required>
+                    </div>
+                    <div class="form-grupo">
+                        <label for="categoria">Categoría</label>
+                        <select id="categoria" name="categoria">
+                            <option value="">-- Seleccionar --</option>
+                            <?php foreach ($categorias as $c): ?>
+                                <option value="<?= (int)$c['ID_Categoria'] ?>" <?= ($c['ID_Categoria'] == $productoEditar['ID_Categoria']) ? 'selected' : '' ?>>
+                                    <?= h($c['nombreCategoria']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <h2 style="margin-top:18px;">Información comercial</h2>
+                    <div class="form-grupo">
+                        <label for="precio_compra">Precio de compra</label>
+                        <input type="number" step="0.01" min="0" id="precio_compra" name="precio_compra" value="<?= (float)$productoEditar['precioCompra'] ?>" required>
+                    </div>
+                    <div class="form-grupo">
+                        <label for="precio_venta">Precio de venta</label>
+                        <input type="number" step="0.01" min="0" id="precio_venta" name="precio_venta" value="<?= (float)$productoEditar['precioVenta'] ?>" required>
+                    </div>
+                    <div class="form-grupo">
+                        <label for="iva">IVA (%)</label>
+                        <input type="number" step="0.01" min="0" id="iva" name="iva" value="<?= (float)$productoEditar['iva'] ?>">
+                    </div>
+                    <div class="form-grupo">
+                        <label for="stock_actual">Stock actual</label>
+                        <input type="number" min="0" id="stock_actual" name="stock_actual" value="<?= (int)$productoEditar['stockActual'] ?>" required>
+                    </div>
+                    <div class="form-grupo">
+                        <label for="stock_minimo">Stock mínimo</label>
+                        <input type="number" min="0" id="stock_minimo" name="stock_minimo" value="<?= (int)$productoEditar['stockMinimo'] ?>" required>
+                    </div>
+
+                    <div class="acciones-form">
+                        <a href="productos.php" class="btn">Cancelar</a>
+                        <button type="submit" name="accion_editar" class="btn btn-rojo">GUARDAR CAMBIOS</button>
                     </div>
                 </form>
             </div>
@@ -204,23 +381,9 @@ $productos = $stmt->fetchAll();
                 </form>
             </div>
 
-        <?php elseif ($vista === 'eliminar'): ?>
-            <div class="form-box">
-                <h2>Eliminar producto</h2>
-                <form method="POST" action="productos.php" onsubmit="return confirm('¿Seguro que deseas eliminar este producto?');">
-                    <div class="form-grupo">
-                        <label for="nombre_eliminar">Nombre producto</label>
-                        <input type="text" id="nombre_eliminar" name="nombre_eliminar" required>
-                    </div>
-                    <div class="acciones-form">
-                        <a href="productos.php" class="btn">Cancelar</a>
-                        <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
-                    </div>
-                </form>
-            </div>
         <?php endif; ?>
 
-        <table>
+                <table>
             <thead>
                 <tr>
                     <th>Código</th>
@@ -229,16 +392,19 @@ $productos = $stmt->fetchAll();
                     <th>Precio</th>
                     <th>Stock</th>
                     <th>Estado</th>
+                    <th>Activo</th>
+                    <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($productos)): ?>
-                    <tr><td colspan="6" class="sin-datos">No se encontraron productos.</td></tr>
+                    <tr><td colspan="8" class="sin-datos">No se encontraron productos.</td></tr>
                 <?php else: ?>
                     <?php foreach ($productos as $p):
                         $bajo = $p['stockActual'] <= $p['stockMinimo'];
+                        $activo = (int)($p['activo'] ?? 1) === 1;
                     ?>
-                        <tr>
+                        <tr style="<?= $activo ? '' : 'opacity:.55;' ?>">
                             <td><?= h($p['codigoProducto']) ?></td>
                             <td><?= h($p['nombreProducto']) ?></td>
                             <td><?= h($p['nombreCategoria'] ?? '—') ?></td>
@@ -248,6 +414,23 @@ $productos = $stmt->fetchAll();
                                 <span class="estado <?= $bajo ? 'estado-bajo' : 'estado-ok' ?>">
                                     <?= $bajo ? 'Bajo' : 'OK' ?>
                                 </span>
+                            </td>
+                            <td><?= $activo ? 'Sí' : 'No' ?></td>
+                            <td>
+                                <a style="text-decoration:none;" href="productos.php?vista=editar&codigo=<?= urlencode($p['codigoProducto']) ?>" title="Editar producto">Editar</a>
+
+                                <form method="POST" action="productos.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este producto?');">
+                                    <?= csrfCampo() ?>
+                                    <input type="hidden" name="id_eliminar" value="<?= (int)$p['ID_Producto'] ?>">
+                                    <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
+                                </form>
+
+                                <form method="POST" action="productos.php" style="display:inline;" onsubmit="return confirm('<?= $activo ? '¿Desactivar este producto?' : '¿Activar este producto?' ?>');">
+                                    <?= csrfCampo() ?>
+                                    <input type="hidden" name="id_estado" value="<?= (int)$p['ID_Producto'] ?>">
+                                    <input type="hidden" name="nuevo_estado" value="<?= $activo ? 0 : 1 ?>">
+                                    <button type="submit" name="accion_estado" class="btn"><?= $activo ? 'Desactivar' : 'Activar' ?></button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>

@@ -85,6 +85,7 @@ Estructura de archivos según el repositorio original:
 ├── productos.php           # Módulo de productos
 ├── categorias.php          # Módulo de categorías
 ├── proveedores.php         # Módulo de proveedores
+├── entradas.php            # Entradas de mercancía (historial y registro)
 ├── ventas.php              # Módulo de ventas
 ├── reportes.php            # Módulo de reportes
 ├── cambiarContrasena.php   # Cambio de contraseña (pide email y contraseña actual)
@@ -134,6 +135,8 @@ Motor: MariaDB. Script de creación e importación de datos de ejemplo: [`db_9el
 administrador ──< ventas ──< detalle_ventas >── productos >── categorias
                                                                   ^
                                           proveedores ────────────┘
+
+                                          proveedores ──< entradas ──< detalle_entradas >── productos
 ```
 
 | Tabla | Descripción | Campos principales |
@@ -144,6 +147,8 @@ administrador ──< ventas ──< detalle_ventas >── productos >── ca
 | `proveedores` | Empresas que surten mercancía | `ID_Proveedor` (PK), `nombreEmpresa`, `telefono`, `contacto`, `ID_Categoria` (FK) |
 | `ventas` | Encabezado de cada venta | `ID_Venta` (PK), `fechaVenta` (DATE), `totalVenta`, `ID_Administrador` (FK) |
 | `detalle_ventas` | Líneas de cada venta | `ID_Detalle` (PK), `ID_Venta` (FK), `ID_Producto` (FK), `cantidad`, `precioUnitario`, `subtotal` |
+| `entradas` | Encabezado de cada entrada de mercancía | `ID_Entrada` (PK), `fechaEntrada` (DATE), `totalEntrada`, `ID_Proveedor` (FK), `ID_Administrador` (FK) |
+| `detalle_entradas` | Líneas de cada entrada | `ID_Detalle` (PK), `ID_Entrada` (FK), `ID_Producto` (FK), `cantidad`, `precioUnitario`, `subtotal` |
 
 Datos de ejemplo incluidos: 1 administrador, 4 categorías (Bebidas, Snacks, Lácteos, Aseo), 3 productos, 2 proveedores y 1 venta.
 
@@ -160,8 +165,11 @@ Datos de ejemplo incluidos: 1 administrador, 4 categorías (Bebidas, Snacks, Lá
 | una venta | se borran sus líneas de `detalle_ventas` (CASCADE) |
 | un producto que ya se vendió | la base lo **rechaza** (no hay `ON DELETE`) |
 | el administrador con ventas | la base lo **rechaza** |
+| un producto que ya se recibió en una entrada | la base lo **rechaza** (no hay `ON DELETE`) |
+| un proveedor con entradas | `entradas.ID_Proveedor` queda en `NULL` (el historial se conserva) |
+| una entrada | se borran sus líneas de `detalle_entradas` (CASCADE) |
 
-- **Falta una tabla de entradas de mercancía.** El requerimiento RF-12 pide registrar fecha, proveedor, producto, cantidad y precio unitario, y el modelo no lo soporta.
+- **Las entradas de mercancía** se guardan en dos tablas, igual que las ventas: el encabezado en `entradas` y cada producto recibido en `detalle_entradas`, con el precio unitario del momento. Al registrar una entrada se suma la cantidad a `productos.stockActual` dentro de una transacción.
 - **Las contraseñas están en texto plano** en el script de ejemplo. Ver la advertencia de seguridad más abajo.
 
 ---
@@ -343,7 +351,6 @@ El documento de revisión de requerimientos aprobó el alcance pero dejó **tres
 | Pendiente | Origen |
 |-----------|--------|
 | Editar productos, categorías y proveedores (hoy solo hay crear/consultar/eliminar) | CU 2.2.4, 2.3.4, 2.4.4 |
-| Registro de **entradas de mercancía** con proveedor, producto, cantidad y precio | RF-12 |
 | Caso de uso explícito de **nueva venta** | CU 2.5.1 |
 | Reportes que faltan: movimientos de inventario, stock bajo y valor del inventario | RF-14 |
 | Recuperar una contraseña olvidada por correo | RF-03 / CU 1.2 |
