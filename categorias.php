@@ -10,20 +10,33 @@ $vista = $_GET['vista'] ?? 'lista';
 // ----------------------------------------------------
 // ACCIÓN: Nueva categoría
 // ----------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nueva'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_nueva'])) 
+{
     $nombre = trim($_POST['nombre'] ?? '');
 
-    if ($nombre === '') {
+    if ($nombre === '') 
+    {
         $error = 'El nombre de la categoría es obligatorio.';
         $vista = 'nueva';
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO categorias (nombreCategoria) VALUES (?)");
-        $stmt->execute([$nombre]);
-        $exito = "Categoría \"$nombre\" creada correctamente.";
-        $vista = 'lista';
+    } else 
+    {
+        // Verificar duplicados
+        $stmtCheck = $pdo->prepare("SELECT COUNT(*) FROM categorias WHERE nombreCategoria = ?");
+        $stmtCheck->execute([$nombre]);
+        
+        if ($stmtCheck->fetchColumn() > 0) 
+        {
+            $error = "Ya existe una categoría con el nombre \"$nombre\".";
+            $vista = 'nueva';
+        } else 
+        {
+            $stmt = $pdo->prepare("INSERT INTO categorias (nombreCategoria) VALUES (?)");
+            $stmt->execute([$nombre]);
+            $exito = "Categoría \"$nombre\" creada correctamente.";
+            $vista = 'lista';
+        }
     }
 }
-
 // ----------------------------------------------------
 // ACCIÓN: Eliminar categoría
 // ----------------------------------------------------
@@ -66,6 +79,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_eliminar'])) {
     }
     $vista = 'lista';
 }
+// ----------------------------------------------------
+// ACCIÓN: Editar categoría
+// ----------------------------------------------------
+$categoriaEditar = null;
+if ($vista === 'editar' && isset($_GET['id'])) 
+{
+    $idEditar = (int)$_GET['id'];
+    $stmt = $pdo->prepare("SELECT * FROM categorias WHERE ID_Categoria = ?");
+    $stmt->execute([$idEditar]);
+    $categoriaEditar = $stmt->fetch();
+    if (!$categoriaEditar) 
+    {
+        $error = 'Categoría no encontrada.';
+        $vista = 'lista';
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_editar'])) 
+{
+    $idCategoria = (int)($_POST['id_categoria'] ?? 0);
+    $nombre = trim($_POST['nombre'] ?? '');
+
+    if ($nombre === '') 
+    {
+        $error = 'El nombre de la categoría es obligatorio.';
+        $vista = 'editar';
+        $categoriaEditar = ['ID_Categoria' => $idCategoria, 'nombreCategoria' => ''];
+    } else 
+    {
+        // Verificar duplicados excluyendo la categoría actual
+        $stmtCheck = $pdo->prepare("SELECT COUNT(*) FROM categorias WHERE nombreCategoria = ? AND ID_Categoria != ?");
+        $stmtCheck->execute([$nombre, $idCategoria]);
+        
+        if ($stmtCheck->fetchColumn() > 0) 
+        {
+            $error = "Ya existe otra categoría registrada con el nombre \"$nombre\".";
+            $vista = 'editar';
+            $categoriaEditar = ['ID_Categoria' => $idCategoria, 'nombreCategoria' => $nombre];
+        } else 
+        {
+            $stmt = $pdo->prepare("UPDATE categorias SET nombreCategoria = ? WHERE ID_Categoria = ?");
+            $stmt->execute([$nombre, $idCategoria]);
+            $exito = "Categoría actualizada correctamente a \"$nombre\".";
+            $vista = 'lista';
+        }
+    }
+}
+
 // ----------------------------------------------------
 // ACCIÓN: Consultar (filtro de búsqueda)
 // ----------------------------------------------------
@@ -138,6 +199,23 @@ $categorias = $stmt->fetchAll();
                     </form>
                 </div>
 
+
+            <?php elseif ($vista === 'editar' && $categoriaEditar): ?>
+                <div class="form-box" style="margin:15px auto;">
+                    <h2>Editar categoría</h2>
+                    <form method="POST" action="categorias.php">
+                        <input type="hidden" name="id_categoria" value="<?= $categoriaEditar['ID_Categoria'] ?>">
+                        <div class="form-grupo">
+                            <label for="nombre">Nombre</label>
+                            <input type="text" id="nombre" name="nombre" value="<?= h($categoriaEditar['nombreCategoria']) ?>" required>
+                        </div>
+                        <div class="acciones-form">
+                            <a href="categorias.php" class="btn">Cancelar</a>
+                            <button type="submit" name="accion_editar" class="btn btn-rojo">Guardar cambios</button>
+                        </div>
+                    </form>
+                </div>
+
             <?php elseif ($vista === 'consultar'): ?>
                 <div class="form-box" style="margin:15px auto;">
                     <h2>Consultar categoría</h2>
@@ -153,7 +231,21 @@ $categorias = $stmt->fetchAll();
                     </form>
                 </div>
 
-            <?php  endif; ?>
+            <?php elseif ($vista === 'eliminar'): ?>
+                <div class="form-box" style="margin:15px auto;">
+                    <h2>Eliminar categoría</h2>
+                    <form method="POST" action="categorias.php" onsubmit="return confirm('¿Seguro que deseas eliminar esta categoría?');">
+                        <div class="form-grupo">
+                            <label for="nombre_eliminar">Nombre categoría</label>
+                            <input type="text" id="nombre_eliminar" name="nombre_eliminar" required>
+                        </div>
+                        <div class="acciones-form">
+                            <a href="categorias.php" class="btn">Cancelar</a>
+                            <button type="submit" name="accion_eliminar" class="btn btn-rojo">Eliminar</button>
+                        </div>
+                    </form>
+                </div>
+            <?php endif; ?>
             <table>
                 <thead>
                     <tr>
@@ -173,6 +265,7 @@ $categorias = $stmt->fetchAll();
                                 <td><?= h($c['nombreCategoria']) ?></td>
                                 <td><?= (int)$c['totalProductos'] ?></td>
                                 <td>
+                                    <a href="categorias.php?vista=editar&id=<?= $c['ID_Categoria'] ?>" class="btn" style="padding: 4px 8px; font-size: 13px;">Editar</a>
                                     <form method="POST" action="categorias.php" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar esta categoría?');">
                                         <?= csrfCampo() ?>
                                         <input type="hidden" name="id_eliminar" value="<?= (int)$c['ID_Categoria'] ?>">
