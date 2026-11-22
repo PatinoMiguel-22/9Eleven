@@ -172,6 +172,7 @@ ALTER TABLE `administrador`
 --
 ALTER TABLE `categorias`
   ADD PRIMARY KEY (`ID_Categoria`);
+  ADD UNIQUE KEY `nombreCategoria` (`nombreCategoria`);
 
 --
 -- Indices de la tabla `productos`
