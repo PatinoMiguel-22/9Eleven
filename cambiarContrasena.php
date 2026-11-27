@@ -1,6 +1,12 @@
 <?php
 require_once 'config.php';
 
+// Exigir sesión activa para acceder al cambio de contraseña
+requerirLogin();
+
+const MAX_INTENTOS_CAMBIO = 5;
+const TIEMPO_BLOQUEO_SEGUNDOS = 300; // 5 minutos
+
 $error = '';
 $exito = '';
 
@@ -9,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_cambiar'])) {
     $claveActual    = $_POST['clave_actual'] ?? '';
     $claveNueva     = $_POST['clave_nueva'] ?? '';
     $claveConfirmar = $_POST['clave_confirmar'] ?? '';
+    $ip             = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
     if ($email === '' || $claveActual === '' || $claveNueva === '' || $claveConfirmar === '') {
         $error = 'Todos los campos son obligatorios.';
@@ -17,27 +24,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_cambiar'])) {
     } elseif (strlen($claveNueva) < 6) {
         $error = 'La nueva contraseña debe tener al menos 6 caracteres.';
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM administrador WHERE email = ? LIMIT 1");
-        $stmt->execute([$email]);
-        $admin = $stmt->fetch();
+        $claveControl = 'cambio_' . hash('sha256', strtolower($email) . '|' . $ip);
 
-        $claveValida = false;
-        if ($admin) {
-            if (password_get_info($admin['contrasena'])['algo'] !== null) {
-                $claveValida = password_verify($claveActual, $admin['contrasena']);
+        if (!isset($_SESSION['control_intentos'][$claveControl])) {
+            $_SESSION['control_intentos'][$claveControl] = [
+                'intentos'        => 0,
+                'bloqueado_hasta' => 0
+            ];
+        }
+
+        $registro = &$_SESSION['control_intentos'][$claveControl];
+        $ahora    = time();
+
+        // Si el tiempo de bloqueo ya expiró, reiniciar contador
+        if ($registro['bloqueado_hasta'] > 0 && $ahora >= $registro['bloqueado_hasta']) {
+            $registro['intentos']        = 0;
+            $registro['bloqueado_hasta'] = 0;
+        }
+
+        // Verificar si sigue bloqueado
+        if ($registro['bloqueado_hasta'] > $ahora) {
+            $minutosRestantes = (int) ceil(($registro['bloqueado_hasta'] - $ahora) / 60);
+            $error = "Demasiados intentos fallidos. Intenta nuevamente en {$minutosRestantes} minuto(s).";
+        } else {
+            // Validar únicamente contra el administrador autenticado en sesión
+            $stmt = $pdo->prepare("SELECT * FROM administrador WHERE ID_Administrador = ? LIMIT 1");
+            $stmt->execute([$_SESSION['admin_id']]);
+            $admin = $stmt->fetch();
+
+            $emailCoincide = $admin && hash_equals(strtolower($admin['email']), strtolower($email));
+            $claveValida   = false;
+
+            if ($emailCoincide) {
+                if (password_get_info($admin['contrasena'])['algo'] !== null) {
+                    $claveValida = password_verify($claveActual, $admin['contrasena']);
+                } else {
+                    $claveValida = hash_equals($admin['contrasena'], $claveActual);
+                }
+            }
+
+            if (!$emailCoincide || !$claveValida) {
+                $registro['intentos']++;
+
+                if ($registro['intentos'] >= MAX_INTENTOS_CAMBIO) {
+                    $registro['bloqueado_hasta'] = $ahora + TIEMPO_BLOQUEO_SEGUNDOS;
+                    $minutos = (int) ceil(TIEMPO_BLOQUEO_SEGUNDOS / 60);
+                    $error = "Credenciales inválidas. Acción bloqueada temporalmente por {$minutos} minutos.";
+                } else {
+                    $error = 'Credenciales inválidas.';
+                }
             } else {
-                $claveValida = hash_equals($admin['contrasena'], $claveActual);
+                // Reiniciar contador tras cambio exitoso
+                unset($_SESSION['control_intentos'][$claveControl]);
+
+                $hash = password_hash($claveNueva, PASSWORD_DEFAULT);
+                $upd  = $pdo->prepare("UPDATE administrador SET contrasena = ? WHERE ID_Administrador = ?");
+                $upd->execute([$hash, $admin['ID_Administrador']]);
+                $exito = 'Contraseña actualizada correctamente.';
             }
         }
-
-        if (!$admin || !$claveValida) {
-            $error = 'Email o contraseña actual incorrectos.';
-        } else {
-            $hash = password_hash($claveNueva, PASSWORD_DEFAULT);
-            $upd = $pdo->prepare("UPDATE administrador SET contrasena = ? WHERE ID_Administrador = ?");
-            $upd->execute([$hash, $admin['ID_Administrador']]);
-            $exito = 'Contraseña actualizada correctamente. Ya puedes iniciar sesión.';
-        }
+        unset($registro);
     }
 }
 ?>
@@ -55,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_cambiar'])) {
         <span style="font-weight:bold; font-size:1.4rem; letter-spacing:1px;">9ELEVEN</span>
     </div>
     <div class="usuario">
-        <a href="index.php">Volver al inicio</a>
+        <a href="dashboard.php">Volver al panel</a>
         <div class="avatar"></div>
     </div>
 </header>
@@ -93,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_cambiar'])) {
         </form>
 
         <div class="link-secundario">
-            <a href="index.php">Volver a Log In</a>
+            <a href="dashboard.php">Volver al Dashboard</a>
         </div>
     </div>
 </div>

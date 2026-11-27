@@ -7,38 +7,70 @@ if (estaLogueado()) {
     exit;
 }
 
+const MAX_INTENTOS_LOGIN = 5;
+const TIEMPO_BLOQUEO_SEGUNDOS = 300; // 5 minutos
+
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_login'])) {
     $email = trim($_POST['email'] ?? '');
-    $clave = $_POST['contrasena'] ?? '';
+    $clave =$_POST['contrasena'] ?? '';
+    $ip    =$_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
-    if ($email === '' || $clave === '') {
-        $error = 'Debes ingresar email y contraseña.';
+    if ($email === '' || $clave === '') {$error = 'Debes ingresar email y contraseña.';
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM administrador WHERE email = ? LIMIT 1");
-        $stmt->execute([$email]);
-        $admin = $stmt->fetch();
+        $claveControl = 'login_' . hash('sha256', strtolower($email) . '\vert{}' .$ip);
 
-        // Soporta tanto contraseñas en texto plano (datos de ejemplo del .sql)
-        // como hasheadas con password_hash (recomendado para producción).
-        $claveValida = false;
-        if ($admin) {
-            if (password_get_info($admin['contrasena'])['algo'] !== null) {
-                $claveValida = password_verify($clave, $admin['contrasena']);
+        if (!isset($_SESSION['control_intentos'][$claveControl])) {
+            $_SESSION['control_intentos'][$claveControl] = [
+                'intentos'        => 0,
+                'bloqueado_hasta' => 0
+            ];
+        }
+
+        $registro = &$_SESSION['control_intentos'][$claveControl];$ahora    = time();
+
+        // Si el tiempo de bloqueo ya expiró, reiniciar contador
+        if ($registro['bloqueado_hasta'] > 0 &&$ahora >= $registro['bloqueado_hasta']) {$registro['intentos']        = 0;
+            $registro['bloqueado_hasta'] = 0;
+        }
+
+        // Verificar si sigue bloqueado
+        if ($registro['bloqueado_hasta'] >$ahora) {
+            $minutosRestantes = (int) ceil(($registro['bloqueado_hasta'] - $ahora) / 60);$error = "Demasiados intentos fallidos. Intenta nuevamente en {$minutosRestantes} minuto(s).";
+        } else {
+            $stmt =$pdo->prepare("SELECT * FROM administrador WHERE email = ? LIMIT 1");
+            $stmt->execute([$email]);
+            $admin =$stmt->fetch();
+
+            $claveValida = false;
+            if ($admin) {
+                if (password_get_info($admin['contrasena'])['algo'] !== null) {$claveValida = password_verify($clave,$admin['contrasena']);
+                } else {
+                    $claveValida = hash_equals($admin['contrasena'],$clave);
+                }
+            }
+
+            if ($admin &&$claveValida) {
+                // Reiniciar contador tras acceso exitoso
+                unset($_SESSION['control_intentos'][$claveControl]);
+
+                $_SESSION['admin_id']    =$admin['ID_Administrador'];
+                $_SESSION['admin_email'] =$admin['email'];
+                header('Location: dashboard.php');
+                exit;
             } else {
-                $claveValida = hash_equals($admin['contrasena'], $clave);
+                $registro['intentos']++;
+
+                if ($registro['intentos'] >= MAX_INTENTOS_LOGIN) {
+                    $registro['bloqueado_hasta'] =$ahora + TIEMPO_BLOQUEO_SEGUNDOS;
+                    $minutos = (int) ceil(TIEMPO_BLOQUEO_SEGUNDOS / 60);$error = "Credenciales inválidas. Acceso bloqueado temporalmente por {$minutos} minutos.";
+                } else {
+                    $error = 'Credenciales inválidas.';
+                }
             }
         }
-
-        if ($admin && $claveValida) {
-            $_SESSION['admin_id'] = $admin['ID_Administrador'];
-            $_SESSION['admin_email'] = $admin['email'];
-            header('Location: dashboard.php');
-            exit;
-        } else {
-            $error = 'Email o contraseña incorrectos.';
-        }
+        unset($registro);
     }
 }
 ?>
@@ -88,10 +120,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_login'])) {
             </div>
             <button type="submit" name="accion_login" class="btn btn-rojo btn-ancho">Log In</button>
         </form>
-
-        <div class="link-secundario">
-            <a href="cambiarContrasena.php">Cambiar contraseña</a>
-        </div>
     </div>
 
 </div>
